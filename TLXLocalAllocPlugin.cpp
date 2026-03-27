@@ -26,7 +26,6 @@
 #include "triton/Dialect/TritonGPU/IR/Dialect.h"
 #include "triton/Dialect/TritonNvidiaGPU/IR/Dialect.h"
 #include "triton/Tools/PluginUtils.h"
-#include <unordered_map>
 
 namespace ttg = mlir::triton::gpu;
 namespace ttng = mlir::triton::nvidia_gpu;
@@ -71,12 +70,11 @@ static std::optional<int64_t> extractConstantInt(mlir::Value v) {
 //                    (first dim is num-buffers, rest is per-buffer shape)
 // ===========================================================================
 
-static TritonPluginResult
-createLocalAllocSmem(const char *handle, TritonOpBuilder &self,
-                     std::vector<mlir::Value> &operands) {
+static void createLocalAllocSmem(TritonOpBuilder &self,
+                                 std::vector<mlir::Value> &operands) {
   // result + type_carrier + at least 2 shape dims + target_hint
   if (operands.size() < 5)
-    return TP_GENERIC_FAILURE;
+    return;
 
   // Extract element type from the type-carrier value
   mlir::Type elemType = operands[1].getType();
@@ -84,7 +82,7 @@ createLocalAllocSmem(const char *handle, TritonOpBuilder &self,
   // Last operand is target hint: 1 = AMD, 0 = NVIDIA
   auto targetHintVal = extractConstantInt(operands.back());
   if (!targetHintVal)
-    return TP_GENERIC_FAILURE;
+    return;
   bool isAMD = *targetHintVal == 1;
 
   // Extract full shape from operands[2..N-1] (excluding last target hint)
@@ -92,7 +90,7 @@ createLocalAllocSmem(const char *handle, TritonOpBuilder &self,
   for (unsigned i = 2; i < operands.size() - 1; ++i) {
     auto dimVal = extractConstantInt(operands[i]);
     if (!dimVal)
-      return TP_GENERIC_FAILURE;
+      return;
     fullShape.push_back(*dimVal);
   }
 
@@ -133,7 +131,7 @@ createLocalAllocSmem(const char *handle, TritonOpBuilder &self,
                                            /*mutableMemory=*/true);
 
   operands[0] = self.create<ttg::LocalAllocOp>(memDescType);
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
@@ -145,22 +143,21 @@ createLocalAllocSmem(const char *handle, TritonOpBuilder &self,
 //                 Overwritten with the TMEMAllocOp result.
 // ===========================================================================
 
-static TritonPluginResult
-createLocalAllocTmem(const char *handle, TritonOpBuilder &self,
-                     std::vector<mlir::Value> &operands) {
+static void createLocalAllocTmem(TritonOpBuilder &self,
+                                 std::vector<mlir::Value> &operands) {
   if (operands.empty())
-    return TP_GENERIC_FAILURE;
+    return;
 
   auto memDescType =
       mlir::dyn_cast<ttg::MemDescType>(operands[0].getType());
   if (!memDescType)
-    return TP_GENERIC_FAILURE;
+    return;
 
   if (!mlir::isa<ttng::TensorMemorySpaceAttr>(memDescType.getMemorySpace()))
-    return TP_GENERIC_FAILURE;
+    return;
 
   operands[0] = self.create<ttng::TMEMAllocOp>(memDescType, /*src=*/nullptr);
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
@@ -177,11 +174,10 @@ createLocalAllocTmem(const char *handle, TritonOpBuilder &self,
 //   operands[2] = buffer index (i32 scalar)
 // ===========================================================================
 
-static TritonPluginResult
-createLocalView(const char *handle, TritonOpBuilder &self,
-                std::vector<mlir::Value> &operands) {
+static void createLocalView(TritonOpBuilder &self,
+                            std::vector<mlir::Value> &operands) {
   if (operands.size() < 3)
-    return TP_GENERIC_FAILURE;
+    return;
 
   mlir::Value localAlloc = operands[1];
   mlir::Value bufferIdx = operands[2];
@@ -189,7 +185,7 @@ createLocalView(const char *handle, TritonOpBuilder &self,
   auto localAllocType =
       mlir::dyn_cast<ttg::MemDescType>(localAlloc.getType());
   if (!localAllocType)
-    return TP_GENERIC_FAILURE;
+    return;
 
   auto localAllocShape = localAllocType.getShape();
   mlir::Type memDescType;
@@ -209,7 +205,7 @@ createLocalView(const char *handle, TritonOpBuilder &self,
 
   operands[0] =
       self.create<ttg::MemDescIndexOp>(memDescType, localAlloc, bufferIdx);
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
@@ -225,20 +221,19 @@ createLocalView(const char *handle, TritonOpBuilder &self,
 // No result is produced (store is a side-effecting op).
 // ===========================================================================
 
-static TritonPluginResult
-createLocalStore(const char *handle, TritonOpBuilder &self,
-                 std::vector<mlir::Value> &operands) {
+static void createLocalStore(TritonOpBuilder &self,
+                             std::vector<mlir::Value> &operands) {
   if (operands.size() < 3)
-    return TP_GENERIC_FAILURE;
+    return;
 
   mlir::Value dst = operands[1];
   mlir::Value src = operands[2];
 
   if (!mlir::isa<ttg::MemDescType>(dst.getType()))
-    return TP_GENERIC_FAILURE;
+    return;
 
   self.create<ttg::LocalStoreOp>(src, dst);
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
@@ -254,17 +249,16 @@ createLocalStore(const char *handle, TritonOpBuilder &self,
 //   operands[2] = (optional) async token
 // ===========================================================================
 
-static TritonPluginResult
-createLocalLoad(const char *handle, TritonOpBuilder &self,
-                std::vector<mlir::Value> &operands) {
+static void createLocalLoad(TritonOpBuilder &self,
+                            std::vector<mlir::Value> &operands) {
   if (operands.size() < 2)
-    return TP_GENERIC_FAILURE;
+    return;
 
   mlir::Value subView = operands[1];
 
   auto subViewType = mlir::dyn_cast<ttg::MemDescType>(subView.getType());
   if (!subViewType)
-    return TP_GENERIC_FAILURE;
+    return;
 
   auto newType = mlir::RankedTensorType::get(subViewType.getShape(),
                                              subViewType.getElementType());
@@ -275,7 +269,7 @@ createLocalLoad(const char *handle, TritonOpBuilder &self,
     asyncToken = operands[2];
 
   operands[0] = self.create<ttg::LocalLoadOp>(newType, subView, asyncToken);
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
@@ -290,16 +284,15 @@ createLocalLoad(const char *handle, TritonOpBuilder &self,
 //   operands[2] = arriveCount (i32 constant)
 // ===========================================================================
 
-static TritonPluginResult
-createAllocBarriers(const char *handle, TritonOpBuilder &self,
-                    std::vector<mlir::Value> &operands) {
+static void createAllocBarriers(TritonOpBuilder &self,
+                                std::vector<mlir::Value> &operands) {
   if (operands.size() < 3)
-    return TP_GENERIC_FAILURE;
+    return;
 
   auto numBarriersVal = extractConstantInt(operands[1]);
   auto arriveCountVal = extractConstantInt(operands[2]);
   if (!numBarriersVal || !arriveCountVal)
-    return TP_GENERIC_FAILURE;
+    return;
 
   int64_t numBarriers = *numBarriersVal;
   int arriveCount = static_cast<int>(*arriveCountVal);
@@ -345,55 +338,48 @@ createAllocBarriers(const char *handle, TritonOpBuilder &self,
   }
 
   operands[0] = bufferViews;
-  return TP_SUCCESS;
+  return;
 }
 
 // ===========================================================================
-// Plugin registration
+// Plugin registration — new PluginInfo API
 // ===========================================================================
 
-using CustomOpFn = TritonPluginResult (*)(const char *, TritonOpBuilder &,
-                                          std::vector<mlir::Value> &);
+// Pass functions defined in TLXConversionPatterns.cpp
+extern void addTLXPass(mlir::PassManager *pm,
+                       const std::vector<std::string> &args);
+extern void registerTLXPass();
+extern void addTLXInsertAndPropagatePass(mlir::PassManager *pm,
+                                         const std::vector<std::string> &);
+extern void registerTLXInsertAndPropagatePass();
 
-static const char *LOCAL_ALLOC_SMEM = "tlx_local_alloc";
-static const char *LOCAL_ALLOC_TMEM = "tlx_local_alloc_tmem";
-static const char *LOCAL_VIEW = "tlx_local_view";
-static const char *LOCAL_STORE = "tlx_local_store";
-static const char *LOCAL_LOAD = "tlx_local_load";
-static const char *ALLOC_BARRIERS = "tlx_alloc_barriers";
+using namespace mlir::triton;
 
-static std::unordered_map<std::string, CustomOpFn> customOpMap = {
-    {LOCAL_ALLOC_SMEM, createLocalAllocSmem},
-    {LOCAL_ALLOC_TMEM, createLocalAllocTmem},
-    {LOCAL_VIEW, createLocalView},
-    {LOCAL_STORE, createLocalStore},
-    {LOCAL_LOAD, createLocalLoad},
-    {ALLOC_BARRIERS, createAllocBarriers},
-};
-
-static std::vector<const char *> customOpNames = {
-    LOCAL_ALLOC_SMEM, LOCAL_ALLOC_TMEM, LOCAL_VIEW,
-    LOCAL_STORE,      LOCAL_LOAD,       ALLOC_BARRIERS,
-};
-
-TRITON_PLUGIN_API
-tritonEnumeratePluginCustomOps(uint32_t *count, const char **handles) {
-  if (!count)
-    return TP_GENERIC_FAILURE;
-  *count = static_cast<uint32_t>(customOpNames.size());
-  if (!handles)
-    return TP_SUCCESS;
-  for (unsigned i = 0; i < customOpNames.size(); ++i)
-    handles[i] = customOpNames[i];
-  return TP_SUCCESS;
-}
-
-TRITON_PLUGIN_API
-tritonAddPluginCustomOp(const char *handle, TritonOpBuilder &self,
-                        std::vector<mlir::Value> &operands) {
-  std::string key(handle);
-  auto it = customOpMap.find(key);
-  if (it == customOpMap.end())
-    return TP_GENERIC_FAILURE;
-  return it->second(handle, self, operands);
+TRITON_PLUGIN_API plugin::PluginInfo *tritonGetPluginInfo() {
+  static plugin::PassInfo passes[] = {
+      {"tlx_convert_triton_to_tritongpu", "0.1.0", addTLXPass,
+       registerTLXPass},
+      {"tlx_insert_and_propagate_layout", "0.1.0",
+       addTLXInsertAndPropagatePass, registerTLXInsertAndPropagatePass},
+  };
+  static plugin::OpInfo ops[] = {
+      {"tlx_local_alloc", createLocalAllocSmem},
+      {"tlx_local_alloc_tmem", createLocalAllocTmem},
+      {"tlx_local_view", createLocalView},
+      {"tlx_local_store", createLocalStore},
+      {"tlx_local_load", createLocalLoad},
+      {"tlx_alloc_barriers", createAllocBarriers},
+  };
+  static plugin::PluginInfo info = {
+      TRITON_PLUGIN_API_VERSION,
+      "TLXMemOpsPlugin",
+      "0.1.0",
+      passes,
+      2,
+      nullptr,
+      0,
+      ops,
+      6,
+  };
+  return &info;
 }

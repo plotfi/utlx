@@ -5,5 +5,5 @@ TRITON_TLX_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Set TRITON_REPO_ROOT to override if triton is not the immediate parent.
 TRITON_REPO_ROOT="${TRITON_REPO_ROOT:-$(cd "$TRITON_TLX_ROOT/.." && pwd)}"
 
-TRITON_PASS_PLUGIN_PATH="$TRITON_REPO_ROOT/python/triton/plugins/libTLXMemOpsPlugin.so" \
+TRITON_PLUGIN_PATHS="$TRITON_REPO_ROOT/python/triton/plugins/libTLXMemOpsPlugin.so" \
     python "$SCRIPT_DIR/amd-gemm-pipelined.py" "$@"

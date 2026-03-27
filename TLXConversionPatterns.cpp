@@ -6,10 +6,8 @@
 /// addDynamicallyLegalOp and GenericOpPattern entries for
 /// ttg.local_store, ttg.local_load, and ttg.async_copy_global_to_local.
 ///
-/// Exports the standard plugin pass interface:
-///   tritonEnumeratePluginPasses
-///   tritonAddPluginPass
-///   tritonRegisterPluginPass
+/// Exports pass functions used by tritonGetPluginInfo() in
+/// TLXLocalAllocPlugin.cpp.
 
 // ---------------------------------------------------------------------------
 // Includes from TritonToTritonGPUPass.cpp
@@ -36,10 +34,9 @@
 #include "mlir/Support/LLVM.h"
 
 // ---------------------------------------------------------------------------
-// Plugin API
+// Plugin API (pass functions referenced from TLXLocalAllocPlugin.cpp)
 // ---------------------------------------------------------------------------
-#include "triton/Tools/PluginUtils.h"
-#include <unordered_map>
+#include "mlir/Pass/PassManager.h"
 
 // ===========================================================================
 // Begin: copied from TritonToTritonGPUPass.cpp (entire file-local namespace)
@@ -1023,8 +1020,8 @@ static std::unique_ptr<Pass> createTLXInsertAndPropagateLayoutPass() {
 
 // args layout: [target, numWarps, threadsPerWarp, numCTAs]
 // (target is e.g. "hip:gfx950" or "cuda:90")
-static void addTLXPass(mlir::PassManager *pm,
-                       const std::vector<std::string> &args) {
+void addTLXPass(mlir::PassManager *pm,
+                const std::vector<std::string> &args) {
   std::string target = args.size() > 0 ? args[0] : "";
   int numWarps = args.size() > 1 ? std::atoi(args[1].c_str()) : 4;
   int threadsPerWarp = args.size() > 2 ? std::atoi(args[2].c_str()) : 32;
@@ -1033,68 +1030,23 @@ static void addTLXPass(mlir::PassManager *pm,
                                                     numCTAs, target));
 }
 
-static void registerTLXPass() {
+void registerTLXPass() {
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return createTLXConvertTritonToTritonGPUPass(
         /*numWarps=*/4, /*threadsPerWarp=*/32, /*numCTAs=*/1, /*target=*/"");
   });
 }
 
-static void addTLXInsertAndPropagatePass(mlir::PassManager *pm,
-                                          const std::vector<std::string> &) {
+void addTLXInsertAndPropagatePass(mlir::PassManager *pm,
+                                  const std::vector<std::string> &) {
   pm->addPass(createTLXInsertAndPropagateLayoutPass());
 }
 
-static void registerTLXInsertAndPropagatePass() {
+void registerTLXInsertAndPropagatePass() {
   mlir::registerPass([]() -> std::unique_ptr<mlir::Pass> {
     return createTLXInsertAndPropagateLayoutPass();
   });
 }
 
-static const char *TLX_PASS_NAME = "tlx_convert_triton_to_tritongpu";
-static const char *TLX_LAYOUT_PASS_NAME = "tlx_insert_and_propagate_layout";
-
-static std::unordered_map<std::string, decltype(&addTLXPass)> passMap = {
-    {TLX_PASS_NAME, addTLXPass},
-    {TLX_LAYOUT_PASS_NAME, addTLXInsertAndPropagatePass},
-};
-static std::unordered_map<std::string, decltype(&registerTLXPass)>
-    registryMap = {
-        {TLX_PASS_NAME, registerTLXPass},
-        {TLX_LAYOUT_PASS_NAME, registerTLXInsertAndPropagatePass},
-};
-static std::vector<const char *> passNamesTable = {TLX_PASS_NAME,
-                                                    TLX_LAYOUT_PASS_NAME};
-
-TRITON_PLUGIN_API
-tritonEnumeratePluginPasses(uint32_t *passCount, const char **passNames) {
-  if (!passCount)
-    return TP_GENERIC_FAILURE;
-  *passCount = static_cast<uint32_t>(passNamesTable.size());
-  if (!passNames)
-    return TP_SUCCESS;
-  for (unsigned i = 0; i < passNamesTable.size(); ++i)
-    passNames[i] = passNamesTable[i];
-  return TP_SUCCESS;
-}
-
-TRITON_PLUGIN_API
-tritonAddPluginPass(mlir::PassManager *pm, const char *passName,
-                    const std::vector<std::string> &args) {
-  std::string key(passName);
-  auto it = passMap.find(key);
-  if (it == passMap.end())
-    return TP_GENERIC_FAILURE;
-  it->second(pm, args);
-  return TP_SUCCESS;
-}
-
-TRITON_PLUGIN_API
-tritonRegisterPluginPass(const char *passName) {
-  std::string key(passName);
-  auto it = registryMap.find(key);
-  if (it == registryMap.end())
-    return TP_GENERIC_FAILURE;
-  it->second();
-  return TP_SUCCESS;
-}
+// Pass functions are referenced by tritonGetPluginInfo() in
+// TLXLocalAllocPlugin.cpp.

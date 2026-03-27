@@ -30,7 +30,7 @@ Custom `ConvertTritonToTritonGPU` pass (`tlx_convert_triton_to_tritongpu`) that 
 ### Integration
 - Symlink: `python/triton/language/extra/tlx` → `examples/plugins/TLXPlugin/python/tlx`
 - `setup.sh` creates the symlink
-- `TRITON_PASS_PLUGIN_PATH=python/triton/plugins/libTLXMemOpsPlugin.so` loads the plugin
+- `TRITON_PLUGIN_PATHS=python/triton/plugins/libTLXMemOpsPlugin.so` loads the plugin
 - `amd-gemm-pipelined.py` runs successfully on gfx950
 
 ---

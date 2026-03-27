@@ -37,24 +37,11 @@ entry points are defined in `triton/include/triton/Tools/PluginUtils.h`:
 // Required: enumerate what this plugin provides
 TRITON_PLUGIN_API tritonEnumeratePluginCustomOps(uint32_t *count, const char **handles);
 TRITON_PLUGIN_API tritonEnumeratePluginDialects(uint32_t *count, const char **names);
-TRITON_PLUGIN_API tritonEnumeratePluginPasses(uint32_t *count, const char **names);
-
-// Custom op creation — called from Python via the code generator
-TRITON_PLUGIN_API tritonAddPluginCustomOp(const char *handle,
-                                          TritonOpBuilder &self,
-                                          std::vector<mlir::Value> &operands);
-
-// Dialect registration — called to register types/ops with MLIRContext
-TRITON_PLUGIN_API_TYPE(DialectPluginLibraryInfo)
-tritonGetDialectPluginInfo(const char *name);
-
-// Pass insertion — called to add a pass to the PassManager
-TRITON_PLUGIN_API tritonAddPluginPass(mlir::PassManager *pm, const char *name,
-                                      const std::vector<std::string> &args);
-TRITON_PLUGIN_API tritonRegisterPluginPass(const char *name);
+// Single entry point — returns a PluginInfo* with passes, dialects, and ops.
+TRITON_PLUGIN_API mlir::triton::plugin::PluginInfo *tritonGetPluginInfo();
 ```
 
-The plugin is loaded at runtime via `TRITON_PASS_PLUGIN_PATH=path/to/lib.so`.
+The plugin is loaded at runtime via `TRITON_PLUGIN_PATHS=path/to/lib.so` (colon-separated for multiple plugins).
 
 ---
 
@@ -371,7 +358,7 @@ pip install -e . --no-build-isolation
 
 ### Load at runtime
 ```bash
-TRITON_PASS_PLUGIN_PATH=/path/to/libMyTLXPlugin.so python my_kernel.py
+TRITON_PLUGIN_PATHS=/path/to/libMyTLXPlugin.so python my_kernel.py
 ```
 
 ### Insert passes via the pipeline hook
