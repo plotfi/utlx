@@ -2,6 +2,7 @@
 
 The CMakeLists.txt is now a top-level CMake project requiring three paths:
 
+```
   ┌───────────────────┬──────────────────────────────┐
   │     Variable      │         Description          │
   ├───────────────────┼──────────────────────────────┤
@@ -11,6 +12,7 @@ The CMakeLists.txt is now a top-level CMake project requiring three paths:
   ├───────────────────┼──────────────────────────────┤
   │ LLVM_BUILD_DIR    │ LLVM/MLIR build directory    │
   └───────────────────┴──────────────────────────────┘
+```
 
 These can be passed via -D flags or environment variables. Usage:
 
