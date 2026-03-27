@@ -1,4 +1,4 @@
-# Standalone build for triton-tlx
+# Standalone build for µTLX
 
 The CMakeLists.txt is now a top-level CMake project requiring three paths:
 
